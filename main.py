@@ -102,9 +102,10 @@ class DBInterface:
 
 class LoftItem:
     usd_rub_rate = 0
-    col_names = ['item_code', 'sold_qty', 'sold_price', 'sold_sum', 'cost_rub', 'cost_usd']
+    col_names = ['item_code', 'sold_qty', 'sold_price', 'sold_sum',
+                 'cost_rub', 'cost_usd', 'margin_rub', 'margin_pct']
     ru_col_names = ['Артикул', 'Количество продано', 'Средняя цена продажи', 'Сумма продано',
-                    'Себестоимость РУБ', 'Себестоимость USD']
+                    'Себестоимость РУБ', 'Себестоимость USD', 'Маржинальность РУБ/шт', 'Маржинальность %' ]
 
     def __init__(self, item_code, sold_qty, sold_sum):
         self.cost_usd = 0
@@ -116,6 +117,8 @@ class LoftItem:
         else:
             self.sold_price = 0
         self.sold_sum = sold_sum
+        self.margin_rub = 0
+        self.margin_pct = 0
         self.image = None
 
     def __repr__(self):
@@ -133,19 +136,36 @@ class LoftItem:
     def calculate_cost_rub(self):
         if (self.usd_rub_rate > 0) and (self.cost_usd > 0):
             self.cost_rub = self.cost_usd * self.usd_rub_rate
+            if self.sold_qty != 0:
+                self.margin_rub = self.sold_price - self.cost_rub
+                self.margin_pct = self.margin_rub * 100 / self.cost_rub
         else:
             print(f"conversion rate ({self.usd_rub_rate}) and usd cost ({self.cost_usd}) must be set > 0")
             return ValueError
 
-    def get_properties(self):
+    def get_properties_dict(self):
         return {
             'item_code': self.item_code,
             'sold_qty': self.sold_qty,
             'sold_price': self.sold_price,
+            'sold_sum': self.sold_sum,
             'cost_rub': self.cost_rub,
             'cost_usd': self.cost_usd,
-            'sold_sum': self.sold_sum
+            'margin_rub': self.margin_rub,
+            'margin_pct': self.margin_pct
         }
+
+    def get_properties_list(self):
+        return [
+            self.item_code,
+            self.sold_qty,
+            self.sold_price,
+            self.sold_sum,
+            self.cost_rub,
+            self.cost_usd,
+            self.margin_rub,
+            self.margin_pct
+        ]
 
 
 class LoftItemTableModel(QAbstractTableModel):
@@ -169,7 +189,7 @@ class LoftItemTableModel(QAbstractTableModel):
             # See below for the nested-list data structure.
             # .row() indexes into the outer list,
             # .column() indexes into the sub-list
-            value = self._data[index.row()].get_properties()[self.col_names[index.column()]]
+            value = self._data[index.row()].get_properties_dict()[self.col_names[index.column()]]
 
             # if isinstance(value, datetime):
             # Render time to YYY-MM-DD.
@@ -188,7 +208,6 @@ class LoftItemTableModel(QAbstractTableModel):
 
             # Default (anything not captured above: e.g. int)
             return value
-
     def rowCount(self, index):
         # The length of the outer list.
         return len(self._data)
@@ -216,7 +235,7 @@ class LoftItemTableModel(QAbstractTableModel):
         return list(item.item_code for item in self._data)
 
     def get_items_list(self):
-        out = [row.get_properties() for row in self._data]
+        out = [row.get_properties_list() for row in self._data]
         return out
 
     def update_item_cost(self, item_code, new_cost):
@@ -340,7 +359,7 @@ class MainWindow(QMainWindow):
         self.file_filter = 'Excel (*.xlsx)'
         self.exchange_rate = 0
         self.setWindowTitle('Calc')
-        self.setGeometry(100, 100, 900, 600)
+        self.setGeometry(100, 100, 1100, 600)
 
         tab = QTabWidget(self)
 
@@ -503,8 +522,7 @@ class MainWindow(QMainWindow):
 
     def sales_fill_costs(self):
         self.db.fill_cost_from_db(self.sales_page_table_model)
-
-        self.resize_table(self.sales_page_table_model)
+        self.resize_table(self.sales_page_table)
 
     def load_costs_from_db(self):
         self.costs_page_model.set_data_from_list(self.db.get_costs_from_db())
